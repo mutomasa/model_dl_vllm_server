@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "accelerate>=1.9.0",
+    "autoawq>=0.2.9",
+    "bitsandbytes>=0.46.1",
     "huggingface-hub>=0.34.2",
     "transformers>=4.54.0",
     "vllm>=0.10.0",
