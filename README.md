@@ -22,6 +22,9 @@ uv init
 
 # 必要なパッケージをインストール
 uv add vllm transformers huggingface-hub accelerate
+
+# 量子化を使用する場合（推奨）
+uv add bitsandbytes autoawq
 ```
 
 ### 2. 依存関係
@@ -51,11 +54,29 @@ uv run python download_model.py Qwen/Qwen2-1.5B-Instruct --download-dir ./my_mod
 
 ### 8GB GPU対応モデル
 
+#### 非量子化モデル（推奨）
+
 | モデル名 | サイズ | 説明 |
 |---------|--------|------|
 | `Qwen/Qwen2-1.5B-Instruct` | ~3GB | 推奨、高性能 |
 | `microsoft/DialoGPT-medium` | ~1GB | 軽量、高速 |
 | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | ~2GB | 軽量、多言語対応 |
+
+#### 量子化済みモデル（推奨）
+
+| モデル名 | サイズ | 量子化方法 | 説明 |
+|---------|--------|------------|------|
+| `Qwen/Qwen2.5-VL-3B-Instruct-AWQ` | ~1.35GB | AWQ | マルチモーダル、画像理解 |
+| `Qwen/Qwen2-1.5B-Instruct-AWQ` | ~0.8GB | AWQ | 軽量、高性能 |
+| `Qwen/Qwen2.5-VL-7B-Instruct-AWQ` | ~3.5GB | AWQ | 高精度マルチモーダル |
+
+#### 量子化で使用可能なモデル
+
+| モデル名 | 元サイズ | 量子化後 | 量子化方法 | 説明 |
+|---------|----------|----------|------------|------|
+| `Qwen/Qwen2.5-VL-3B-Instruct` | ~7GB | ~3.5GB | BitsAndBytes | マルチモーダル |
+| `Qwen/Qwen2-1.5B-Instruct` | ~3GB | ~1.5GB | BitsAndBytes | 軽量、高性能 |
+| `Qwen/Qwen3-8B-Instruct` | ~16GB | ~8GB | BitsAndBytes | 高精度（8GB GPUで限界） |
 
 ### ダウンロード手順
 
@@ -79,7 +100,7 @@ uv add accelerate
 
 ## 🖥️ vLLMサーバー起動
 
-### 使用方法
+### 基本的な使用方法
 
 ```bash
 # 基本的な使用方法
@@ -89,6 +110,129 @@ uv add accelerate
 ./run_vllm.sh Qwen/Qwen2-1.5B-Instruct
 ./run_vllm.sh microsoft/DialoGPT-medium
 ```
+
+## 🔧 量子化vLLMサーバー起動
+
+### 量子化とは
+
+量子化は、モデルの精度を下げることでメモリ使用量を削減し、推論速度を向上させる技術です。8GB GPUでより大きなモデルを動作させるために重要です。
+
+**主なメリット:**
+- **メモリ削減**: 最大75%のメモリ使用量削減
+- **推論速度向上**: 軽量化により高速推論
+- **8GB GPU対応**: より大きなモデルを動作可能
+- **コスト削減**: より少ないリソースで高性能モデル使用
+
+### 量子化方法の種類
+
+| 量子化方法 | 説明 | 推奨度 | メモリ削減 |
+|-----------|------|--------|------------|
+| **AWQ** | 事前量子化済みモデル | ⭐⭐⭐⭐⭐ | 最大75% |
+| **GPTQ** | 汎用量子化 | ⭐⭐⭐⭐ | 最大75% |
+| **BitsAndBytes** | 動的量子化 | ⭐⭐⭐⭐ | 最大75% |
+| **SqueezeLLM** | 実験的 | ⭐⭐ | 最大75% |
+| **FP4/NF4** | 実験的 | ⭐⭐ | 最大75% |
+
+### 量子化サーバー起動
+
+```bash
+# 基本的な使用方法
+./run_vllm_quantized.sh <モデル名> [量子化方法]
+
+# 例：AWQ量子化済みモデル（推奨）
+./run_vllm_quantized.sh Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq
+
+# 例：BitsAndBytes量子化
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct bitsandbytes
+
+# 例：GPTQ量子化
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct gptq
+
+# 例：実験的量子化（非推奨）
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct fp4
+```
+
+### 実際の使用例
+
+#### 1. マルチモーダルモデル（画像理解）
+
+```bash
+# AWQ量子化済みマルチモーダルモデル
+./run_vllm_quantized.sh Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq
+
+# 使用例：画像の説明生成
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "default",
+    "messages": [
+      {"role": "user", "content": "この画像を説明してください"}
+    ],
+    "max_tokens": 128,
+    "temperature": 0.7
+  }'
+```
+
+#### 2. 軽量テキストモデル
+
+```bash
+# BitsAndBytes量子化で軽量モデル
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct bitsandbytes
+
+# 使用例：テキスト生成
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "default",
+    "messages": [
+      {"role": "user", "content": "AIの未来について説明してください"}
+    ],
+    "max_tokens": 256,
+    "temperature": 0.7
+  }'
+```
+
+### 量子化方法の詳細
+
+#### 🔥 AWQ量子化（推奨・安定）
+- **特徴**: 事前量子化済みモデル、最高の安定性
+- **使用例**: `Qwen/Qwen2.5-VL-3B-Instruct-AWQ`
+- **メリット**: ダウンロード後すぐ使用可能、安定動作
+- **デメリット**: モデル選択が限定的
+
+#### 🔥 GPTQ量子化（推奨・安定）
+- **特徴**: 汎用的な量子化手法
+- **使用例**: 多くのモデルで利用可能
+- **メリット**: 幅広いモデルに対応
+- **デメリット**: 初回起動時に時間がかかる場合がある
+
+#### 🔥 BitsAndBytes量子化（推奨・4bit/8bit）
+- **特徴**: 動的量子化、4bit/8bit精度
+- **使用例**: 任意のモデルで利用可能
+- **メリット**: 最も柔軟、メモリ効率が良い
+- **デメリット**: 初回起動時に時間がかかる
+
+#### ⚠️ 実験的量子化（非推奨）
+- **SqueezeLLM**: 一部環境で未サポート
+- **FP4/NF4**: 一部環境で未サポート
+- **注意**: 動作しない場合は推奨方法を使用してください
+
+### 量子化の選択ガイド
+
+#### 🎯 推奨シナリオ
+
+| 用途 | 推奨量子化 | モデル例 | 理由 |
+|------|------------|----------|------|
+| **マルチモーダル** | AWQ | `Qwen2.5-VL-3B-Instruct-AWQ` | 事前量子化済み、安定 |
+| **軽量テキスト** | BitsAndBytes | `Qwen2-1.5B-Instruct` | 柔軟、メモリ効率 |
+| **高精度** | GPTQ | 任意のモデル | 汎用性、安定性 |
+| **実験・開発** | BitsAndBytes | 任意のモデル | 最も柔軟 |
+
+#### ⚠️ 注意点
+
+- **実験的量子化**: `sq`, `fp4`, `nf4`は一部環境で動作しない可能性
+- **初回起動時間**: 量子化には時間がかかる場合があります
+- **メモリ使用量**: 量子化後もGPUメモリを確認してください
 
 ### サーバー情報
 
@@ -159,21 +303,28 @@ hf_models/
 
 ```
 .
-├── download_model.py      # モデルダウンロードスクリプト
-├── run_vllm.sh           # vLLMサーバー起動スクリプト
-├── pyproject.toml        # プロジェクト設定
-├── .gitignore           # Git除外設定
-├── hf_models/           # ダウンロードしたモデル（Git除外）
-└── README.md            # このファイル
+├── download_model.py           # モデルダウンロードスクリプト
+├── run_vllm.sh                # 基本的なvLLMサーバー起動スクリプト
+├── run_vllm_quantized.sh      # 量子化vLLMサーバー起動スクリプト
+├── pyproject.toml             # プロジェクト設定
+├── .gitignore                # Git除外設定
+├── hf_models/                # ダウンロードしたモデル（Git除外）
+└── README.md                 # このファイル
 ```
 
 ## 🚨 注意事項
 
 ### GPUメモリ制限
 
+#### 非量子化モデル
 - **8GB GPU**: Qwen2-1.5B-Instructなどの軽量モデルを推奨
 - **Qwen2.5-VL-3B-Instruct**: 約7.5GBで8GB GPUでは厳しい可能性
 - **Qwen3-8B**: 8GB GPUでは動作不可
+
+#### 量子化モデル（推奨）
+- **AWQ量子化**: メモリ使用量を最大75%削減
+- **Qwen2.5-VL-3B-Instruct-AWQ**: 約1.35GBで8GB GPUで余裕
+- **BitsAndBytes量子化**: 任意のモデルで4bit/8bit精度に変換可能
 
 ### ダウンロード時間
 
@@ -188,6 +339,8 @@ hf_models/
 
 ## 🔄 完全なワークフロー
 
+### 基本的なワークフロー
+
 ```bash
 # 1. 環境セットアップ
 git clone https://github.com/mutomasa/model_dl_vllm_server.git
@@ -199,6 +352,44 @@ uv run python download_model.py Qwen/Qwen2-1.5B-Instruct
 
 # 3. vLLMサーバー起動
 ./run_vllm.sh Qwen/Qwen2-1.5B-Instruct
+
+# 4. 別のターミナルでStreamlitアプリ起動（オプション）
+cd ../dlt_generation_slide
+uv run streamlit run streamlit_app.py
+```
+
+### 量子化ワークフロー（推奨）
+
+```bash
+# 1. 環境セットアップ
+git clone https://github.com/mutomasa/model_dl_vllm_server.git
+cd model_dl_vllm_server
+uv add vllm transformers huggingface-hub accelerate bitsandbytes
+
+# 2. AWQ量子化済みモデルダウンロード（推奨）
+uv run python download_model.py Qwen/Qwen2.5-VL-3B-Instruct-AWQ
+
+# 3. 量子化vLLMサーバー起動
+./run_vllm_quantized.sh Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq
+
+# 4. 別のターミナルでStreamlitアプリ起動（オプション）
+cd ../dlt_generation_slide
+uv run streamlit run streamlit_app.py
+```
+
+### 動的量子化ワークフロー
+
+```bash
+# 1. 環境セットアップ
+git clone https://github.com/mutomasa/model_dl_vllm_server.git
+cd model_dl_vllm_server
+uv add vllm transformers huggingface-hub accelerate bitsandbytes
+
+# 2. 通常モデルダウンロード
+uv run python download_model.py Qwen/Qwen2-1.5B-Instruct
+
+# 3. BitsAndBytes量子化でvLLMサーバー起動
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct bitsandbytes
 
 # 4. 別のターミナルでStreamlitアプリ起動（オプション）
 cd ../dlt_generation_slide
@@ -221,8 +412,47 @@ A: モデルダウンロードが完了しているか確認してください
 **Q: 権限エラー**
 A: スクリプトに実行権限を付与してください
 ```bash
-chmod +x run_vllm.sh download_model.py
+chmod +x run_vllm.sh run_vllm_quantized.sh download_model.py
 ```
+
+**Q: 量子化エラー（torch.bfloat16 is not supported）**
+A: 量子化方法を変更してください
+```bash
+# AWQ量子化済みモデルを使用
+./run_vllm_quantized.sh Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq
+
+# またはBitsAndBytes量子化を使用
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct bitsandbytes
+```
+
+**Q: 量子化方法が無効**
+A: サポートされている量子化方法を使用してください
+- 推奨: `awq`, `gptq`, `bitsandbytes`
+- 実験的: `sq`, `fp4`, `nf4`（動作しない場合があります）
+
+**Q: 量子化サーバー起動が遅い**
+A: 初回起動時は時間がかかります
+```bash
+# 起動状況を確認
+nvidia-smi  # GPUメモリ使用量を確認
+ps aux | grep vllm  # プロセス状況を確認
+```
+
+**Q: 量子化後もメモリ不足**
+A: より軽量なモデルまたは量子化方法を試してください
+```bash
+# より軽量なモデル
+./run_vllm_quantized.sh Qwen/Qwen2-1.5B-Instruct bitsandbytes
+
+# または非量子化の軽量モデル
+./run_vllm.sh microsoft/DialoGPT-medium
+```
+
+**Q: 量子化モデルの精度が低い**
+A: 量子化は精度を下げる技術です
+- より大きなモデルを使用
+- 非量子化モデルを使用
+- 量子化方法を変更（AWQ → GPTQ）
 
 ## 📞 サポート
 
