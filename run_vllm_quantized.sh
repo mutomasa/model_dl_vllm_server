@@ -13,12 +13,12 @@ if [ -z "$MODEL_NAME" ]; then
   echo "使用方法: $0 <モデル名> [量子化方法]"
   echo ""
   echo "量子化方法:"
-  echo "  awq      - AWQ量子化（推奨）"
-  echo "  gptq     - GPTQ量子化"
-  echo "  bitsandbytes - BitsAndBytes量子化（4bit/8bit）"
-  echo "  sq       - SqueezeLLM量子化"
-  echo "  fp4      - FP4量子化"
-  echo "  nf4      - NF4量子化"
+  echo "  awq      - AWQ量子化（推奨・安定）"
+  echo "  gptq     - GPTQ量子化（推奨・安定）"
+  echo "  bitsandbytes - BitsAndBytes量子化（推奨・4bit/8bit）"
+  echo "  sq       - SqueezeLLM量子化（実験的）"
+  echo "  fp4      - FP4量子化（実験的）"
+  echo "  nf4      - NF4量子化（実験的）"
   echo ""
   echo "例:"
   echo "  $0 Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq"
@@ -53,14 +53,17 @@ case $QUANTIZATION in
   "sq")
     QUANTIZATION_ARGS="--quantization sq"
     echo "🔧 SqueezeLLM量子化を使用"
+    echo "⚠️ sq は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
     ;;
   "fp4")
     QUANTIZATION_ARGS="--quantization fp4"
     echo "🔧 FP4量子化を使用"
+    echo "⚠️ fp4 は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
     ;;
   "nf4")
     QUANTIZATION_ARGS="--quantization nf4"
     echo "🔧 NF4量子化を使用"
+    echo "⚠️ nf4 は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
     ;;
   *)
     echo "❌ 無効な量子化方法: $QUANTIZATION"
@@ -121,7 +124,7 @@ while [ $attempt -lt $max_attempts ]; do
     curl -X POST http://$HOST:$PORT/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
-        "model": "default",
+        "model": "'"$MODEL_NAME"'",
         "messages": [
           {"role": "user", "content": "量子化テスト：こんにちは"}
         ],
