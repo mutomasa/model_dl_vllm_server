@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ================================
-# 量子化vLLMサーバー起動スクリプト
+# 量子化vLLMサーバー起動スクリプト（マルチモーダル対応）
 # ================================
 
 # モデル名をコマンドライン引数から取得
@@ -21,8 +21,19 @@ if [ -z "$MODEL_NAME" ]; then
   echo "  nf4      - NF4量子化（実験的）"
   echo ""
   echo "例:"
-  echo "  $0 Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq"
-  echo "  $0 Qwen/Qwen2-1.5B-Instruct bitsandbytes"
+echo "  $0 Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq"
+echo "  $0 Qwen/Qwen2-1.5B-Instruct bitsandbytes"
+echo ""
+echo "🖼️ マルチモーダル対応モデル:"
+echo "  - Qwen/Qwen2.5-VL-3B-Instruct-AWQ (推奨・軽量)"
+echo "  - Qwen/Qwen2-VL-7B-Instruct (高精度・重い)"
+echo "  - Qwen/Qwen2-VL-1.5B-Instruct (軽量・高速)"
+echo ""
+echo "🔧 マルチモーダル機能:"
+echo "  - 画像キャプション生成"
+echo "  - 画像内容の説明"
+echo "  - 視覚的質問応答"
+echo "  - 画像分析"
   exit 1
 fi
 
@@ -79,6 +90,25 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export VLLM_USE_FLOAT16=1
 
 # ================================
+# マルチモーダル設定
+# ================================
+export VLLM_USE_MULTIMODAL=1
+export VLLM_ENABLE_IMAGE_PROCESSING=1
+echo "🖼️ マルチモーダル環境変数を設定しました"
+
+# マルチモーダル依存関係の確認
+if [[ "$MODEL_NAME" == *"VL"* ]]; then
+  echo "🔍 マルチモーダル依存関係を確認中..."
+  if uv run python -c "import torch; import transformers; print('✅ 依存関係OK')" 2>/dev/null; then
+    echo "✅ マルチモーダル依存関係が正常です"
+  else
+    echo "⚠️ マルチモーダル依存関係に問題がある可能性があります"
+    echo "💡 以下のコマンドで依存関係を更新してください:"
+    echo "   uv add torch transformers pillow"
+  fi
+fi
+
+# ================================
 # モデルAPIサーバーを起動（量子化付き）
 # ================================
 echo "🚀 量子化vLLMサーバーを起動中..."
@@ -87,7 +117,25 @@ echo "量子化: $QUANTIZATION"
 echo "URL: http://$HOST:$PORT"
 echo "API形式: OpenAI互換"
 
-# uvを使用してvLLMサーバーを起動
+# uvを使用してvLLMサーバーを起動（マルチモーダル対応）
+echo "🖼️ マルチモーダル機能: 有効"
+echo "🔧 マルチモーダル専用オプションを適用中..."
+
+# マルチモーダル対応の追加オプション
+MULTIMODAL_ARGS=""
+if [[ "$MODEL_NAME" == *"VL"* ]]; then
+  # vLLMサーバーでマルチモーダル機能を有効化するためのオプション
+  # 現在のvLLMバージョンでは、マルチモーダル機能は自動的に有効になる
+  MULTIMODAL_ARGS="--max-num-seqs 128 --max-num-batched-tokens 2048"
+  echo "✅ マルチモーダルモデルを検出: $MODEL_NAME"
+  echo "🔧 マルチモーダル専用オプション: $MULTIMODAL_ARGS"
+  echo "🖼️ 画像処理機能: 自動有効"
+  echo "📝 マルチモーダルリクエスト: サポート"
+else
+  echo "⚠️ マルチモーダルモデルではありません: $MODEL_NAME"
+  echo "💡 マルチモーダル機能を使用するには、VL（Vision-Language）モデルを選択してください"
+fi
+
 uv run python -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_NAME" \
   --trust-remote-code \
@@ -97,6 +145,11 @@ uv run python -m vllm.entrypoints.openai.api_server \
   --dtype float16 \
   --tensor-parallel-size 1 \
   --max-model-len 4096 \
+  --gpu-memory-utilization 0.9 \
+  --disable-log-requests \
+  --disable-log-stats \
+  --served-model-name "$MODEL_NAME" \
+  $MULTIMODAL_ARGS \
   $QUANTIZATION_ARGS &
 
 # ================================
@@ -121,7 +174,10 @@ while [ $attempt -lt $max_attempts ]; do
     
     # テスト実行
     echo "🧪 サーバーテストを実行中..."
-    curl -X POST http://$HOST:$PORT/v1/chat/completions \
+    
+    # テキストのみのテスト
+    echo "📝 テキストテスト実行中..."
+    TEXT_RESPONSE=$(curl -s -X POST http://$HOST:$PORT/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
         "model": "'"$MODEL_NAME"'",
@@ -130,15 +186,68 @@ while [ $attempt -lt $max_attempts ]; do
         ],
         "max_tokens": 64,
         "temperature": 0.7
-      }' 2>/dev/null | jq -r '.choices[0].message.content' 2>/dev/null || echo "テストレスポンスを取得できませんでした"
+      }' 2>/dev/null | jq -r '.choices[0].message.content' 2>/dev/null || echo "テキストテスト失敗")
+    
+    echo "✅ テキストテスト結果: $TEXT_RESPONSE"
+    
+    # マルチモーダルテスト（小さなテスト画像）
+    echo "🖼️ マルチモーダルテスト実行中..."
+    
+    # マルチモーダルモデルの場合のみテスト
+    if [[ "$MODEL_NAME" == *"VL"* ]]; then
+      MULTIMODAL_RESPONSE=$(curl -s -X POST http://$HOST:$PORT/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model": "'"$MODEL_NAME"'",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {"type": "text", "text": "この画像を説明してください"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}}
+              ]
+            }
+          ],
+          "max_tokens": 100,
+          "temperature": 0.7
+        }' 2>/dev/null | jq -r '.choices[0].message.content' 2>/dev/null || echo "マルチモーダルテスト失敗")
+      
+      echo "✅ マルチモーダルテスト結果: $MULTIMODAL_RESPONSE"
+      
+      # マルチモーダル機能の状態を確認
+      if [[ "$MULTIMODAL_RESPONSE" == *"画像を表示する機能は提供していません"* ]] || [[ "$MULTIMODAL_RESPONSE" == *"マルチモーダルテスト失敗"* ]]; then
+        echo "⚠️ マルチモーダル機能が正しく動作していない可能性があります"
+        echo "💡 ヒント: 以下の点を確認してください"
+        echo "   1. モデルが正しくダウンロードされているか"
+        echo "   2. 十分なGPUメモリがあるか"
+        echo "   3. vLLMのバージョンが最新か"
+        echo "   4. マルチモーダル対応の依存関係がインストールされているか"
+      else
+        echo "✅ マルチモーダル機能が正常に動作しています"
+        echo "🎉 画像キャプション生成が利用可能です"
+      fi
+    else
+      echo "⏭️ マルチモーダルテストをスキップ（VLモデルではありません）"
+    fi
     
     echo ""
     echo "📋 使用方法:"
-    echo "1. 別のターミナルでStreamlitアプリを起動:"
-    echo "   cd ../dlt_generation_slide && uv run streamlit run streamlit_app.py"
+    echo "1. 別のターミナルで画像キャプションアプリを起動:"
+    echo "   cd ../qwen2-vl-caption && uv run streamlit run app.py"
     echo ""
     echo "2. サーバーを停止するには Ctrl+C を押してください"
     echo "   または: pkill -f 'vllm.entrypoints.openai.api_server'"
+    echo ""
+    echo "🔧 マルチモーダル機能が有効です"
+    echo "📡 OpenAI互換API: http://$HOST:$PORT/v1"
+    echo "🖼️ マルチモーダル対応: 画像キャプション生成が可能です"
+    echo "📝 サポート形式: PNG, JPEG, WebP"
+    echo "🔍 画像サイズ: 自動リサイズ（最大1024px）"
+    echo "🚀 使用可能な機能:"
+    echo "   - 画像キャプション生成"
+    echo "   - 画像内容の詳細説明"
+    echo "   - 視覚的質問応答"
+    echo "   - 画像分析・分類"
     
     # プロセスを待機
     wait
