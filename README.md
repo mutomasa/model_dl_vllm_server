@@ -54,13 +54,16 @@ uv run python download_model.py Qwen/Qwen2-1.5B-Instruct --download-dir ./my_mod
 
 ### 8GB GPU対応モデル
 
-#### 非量子化モデル（推奨）
+#### 非量子化モデル（Qwen2.5新機能・推奨）
 
-| モデル名 | サイズ | 説明 |
-|---------|--------|------|
-| `Qwen/Qwen2-1.5B-Instruct` | ~3GB | 推奨、高性能 |
-| `microsoft/DialoGPT-medium` | ~1GB | 軽量、高速 |
-| `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | ~2GB | 軽量、多言語対応 |
+| モデル名 | サイズ | メモリ使用量 | 説明 |
+|---------|--------|------------|------|
+| `Qwen/Qwen2.5-0.5B-Instruct` | ~1GB | ~2GB | 超軽量、高速、最新 |
+| `Qwen/Qwen2.5-1.5B-Instruct` | ~3GB | ~4GB | 推奨、高性能、最新 |
+| `Qwen/Qwen2.5-3B-Instruct` | ~6GB | ~7GB | 高精度、最新 |
+| `Qwen/Qwen2-1.5B-Instruct` | ~3GB | ~4GB | 安定版 |
+| `microsoft/DialoGPT-medium` | ~1GB | ~2GB | 軽量、高速 |
+| `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | ~2GB | ~3GB | 軽量、多言語対応 |
 
 #### 量子化済みモデル（推奨）
 
@@ -110,6 +113,113 @@ uv add accelerate
 ./run_vllm.sh Qwen/Qwen2-1.5B-Instruct
 ./run_vllm.sh microsoft/DialoGPT-medium
 ```
+
+## 🖥️ 量子化なしvLLMサーバー起動（新機能）
+
+### 量子化なしモデルの使用
+
+Qwen2.5の小さいモデル（0.5B、1.5B、3B）は量子化なしでも8GB GPUで動作します。最高の精度でLLMを使用したい場合におすすめです。
+
+```bash
+# 基本的な使用方法
+./run_vllm_quantized.sh <モデル名> none
+
+# Qwen2.5-0.5B-Instruct（超軽量・高速）
+./run_vllm_quantized.sh Qwen/Qwen2.5-0.5B-Instruct none
+
+# Qwen2.5-1.5B-Instruct（軽量・高速）
+./run_vllm_quantized.sh Qwen/Qwen2.5-1.5B-Instruct none
+
+# Qwen2.5-3B-Instruct（バランス型）
+./run_vllm_quantized.sh Qwen/Qwen2.5-3B-Instruct none
+
+# 量子化方法を省略した場合も自動的に'none'が使用される
+./run_vllm_quantized.sh Qwen/Qwen2.5-1.5B-Instruct
+```
+
+### 量子化なしモデルの特徴
+
+| モデル名 | サイズ | メモリ使用量 | 精度 | 速度 | 推奨用途 |
+|---------|--------|------------|------|------|----------|
+| `Qwen/Qwen2.5-0.5B-Instruct` | ~1GB | ~2GB | 高 | 超高速 | 軽量タスク、プロトタイピング |
+| `Qwen/Qwen2.5-1.5B-Instruct` | ~3GB | ~4GB | 高 | 高速 | 一般的なチャット、コード生成 |
+| `Qwen/Qwen2.5-3B-Instruct` | ~6GB | ~7GB | 高 | 中速 | 高精度タスク、複雑な推論 |
+
+**メリット:**
+- **最高精度**: 量子化による精度劣化なし
+- **シンプル**: 複雑な量子化設定不要
+- **高速起動**: 量子化処理時間なし
+- **安定性**: 量子化エラーなし
+
+### 実際の使用例
+
+#### 1. 超軽量チャットボット
+
+```bash
+# Qwen2.5-0.5B-Instructで軽量チャットボット
+./run_vllm_quantized.sh Qwen/Qwen2.5-0.5B-Instruct none
+
+# 使用例：簡単な質問応答
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "messages": [
+      {"role": "user", "content": "Pythonでリストを作る方法を教えて"}
+    ],
+    "max_tokens": 128,
+    "temperature": 0.7
+  }'
+```
+
+#### 2. 一般的な用途
+
+```bash
+# Qwen2.5-1.5B-Instructでバランス型
+./run_vllm_quantized.sh Qwen/Qwen2.5-1.5B-Instruct none
+
+# 使用例：コード生成
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "messages": [
+      {"role": "user", "content": "Pythonでファイルを読み込む関数を作成してください"}
+    ],
+    "max_tokens": 256,
+    "temperature": 0.7
+  }'
+```
+
+#### 3. 高精度タスク
+
+```bash
+# Qwen2.5-3B-Instructで高精度
+./run_vllm_quantized.sh Qwen/Qwen2.5-3B-Instruct none
+
+# 使用例：複雑な推論
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-3B-Instruct",
+    "messages": [
+      {"role": "user", "content": "機械学習のバイアス・バリアンス・トレードオフについて詳しく説明してください"}
+    ],
+    "max_tokens": 512,
+    "temperature": 0.7
+  }'
+```
+
+### 量子化なし vs 量子化の比較
+
+| 項目 | 量子化なし | 量子化あり |
+|------|------------|------------|
+| **精度** | 最高 | やや低下 |
+| **メモリ使用量** | 多い | 少ない（最大75%削減） |
+| **起動時間** | 高速 | やや遅い |
+| **安定性** | 高い | やや不安定な場合がある |
+| **対応モデル** | 小さいモデルのみ | 大きなモデルも可能 |
+| **推奨用途** | 精度重視、軽量モデル | メモリ制限、大きなモデル |
 
 ## 🔧 量子化vLLMサーバー起動
 
@@ -339,7 +449,26 @@ hf_models/
 
 ## 🔄 完全なワークフロー
 
-### 基本的なワークフロー
+### 量子化なしワークフロー（新機能・推奨）
+
+```bash
+# 1. 環境セットアップ
+git clone https://github.com/mutomasa/model_dl_vllm_server.git
+cd model_dl_vllm_server
+uv add vllm transformers huggingface-hub accelerate
+
+# 2. Qwen2.5軽量モデルダウンロード
+uv run python download_model.py Qwen/Qwen2.5-1.5B-Instruct
+
+# 3. 量子化なしでvLLMサーバー起動
+./run_vllm_quantized.sh Qwen/Qwen2.5-1.5B-Instruct none
+
+# 4. 別のターミナルでStreamlitアプリ起動（オプション）
+cd ../dlt_generation_slide
+uv run streamlit run streamlit_app.py
+```
+
+### 基本的なワークフロー（従来）
 
 ```bash
 # 1. 環境セットアップ

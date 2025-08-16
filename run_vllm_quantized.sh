@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ================================
-# 量子化vLLMサーバー起動スクリプト（マルチモーダル対応）
+# vLLMサーバー起動スクリプト（量子化対応・マルチモーダル対応）
 # ================================
 
 # モデル名をコマンドライン引数から取得
@@ -13,6 +13,7 @@ if [ -z "$MODEL_NAME" ]; then
   echo "使用方法: $0 <モデル名> [量子化方法]"
   echo ""
   echo "量子化方法:"
+  echo "  none     - 量子化なし（通常のfloat16）"
   echo "  awq      - AWQ量子化（推奨・安定）"
   echo "  gptq     - GPTQ量子化（推奨・安定）"
   echo "  bitsandbytes - BitsAndBytes量子化（推奨・4bit/8bit）"
@@ -21,19 +22,28 @@ if [ -z "$MODEL_NAME" ]; then
   echo "  nf4      - NF4量子化（実験的）"
   echo ""
   echo "例:"
-echo "  $0 Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq"
-echo "  $0 Qwen/Qwen2-1.5B-Instruct bitsandbytes"
-echo ""
-echo "🖼️ マルチモーダル対応モデル:"
-echo "  - Qwen/Qwen2.5-VL-3B-Instruct-AWQ (推奨・軽量)"
-echo "  - Qwen/Qwen2-VL-7B-Instruct (高精度・重い)"
-echo "  - Qwen/Qwen2-VL-1.5B-Instruct (軽量・高速)"
-echo ""
-echo "🔧 マルチモーダル機能:"
-echo "  - 画像キャプション生成"
-echo "  - 画像内容の説明"
-echo "  - 視覚的質問応答"
-echo "  - 画像分析"
+  echo "  $0 Qwen/Qwen2.5-0.5B-Instruct none"
+  echo "  $0 Qwen/Qwen2.5-1.5B-Instruct none"
+  echo "  $0 Qwen/Qwen2.5-3B-Instruct none"
+  echo "  $0 Qwen/Qwen2.5-VL-3B-Instruct-AWQ awq"
+  echo "  $0 Qwen/Qwen2-1.5B-Instruct bitsandbytes"
+  echo ""
+  echo "🔤 テキストのみモデル（軽量）:"
+  echo "  - Qwen/Qwen2.5-0.5B-Instruct (超軽量・高速)"
+  echo "  - Qwen/Qwen2.5-1.5B-Instruct (軽量・高速)"
+  echo "  - Qwen/Qwen2.5-3B-Instruct (バランス型)"
+  echo "  - Qwen/Qwen2.5-7B-Instruct (高精度・重い)"
+  echo ""
+  echo "🖼️ マルチモーダル対応モデル:"
+  echo "  - Qwen/Qwen2.5-VL-3B-Instruct-AWQ (推奨・軽量)"
+  echo "  - Qwen/Qwen2-VL-7B-Instruct (高精度・重い)"
+  echo "  - Qwen/Qwen2-VL-1.5B-Instruct (軽量・高速)"
+  echo ""
+  echo "🔧 マルチモーダル機能:"
+  echo "  - 画像キャプション生成"
+  echo "  - 画像内容の説明"
+  echo "  - 視覚的質問応答"
+  echo "  - 画像分析"
   exit 1
 fi
 
@@ -42,13 +52,17 @@ HOST="localhost"
 
 # デフォルトの量子化方法
 if [ -z "$QUANTIZATION" ]; then
-  QUANTIZATION="awq"
+  QUANTIZATION="none"
 fi
 
 # ================================
 # 量子化設定
 # ================================
 case $QUANTIZATION in
+  "none")
+    QUANTIZATION_ARGS=""
+    echo "🔧 量子化なし（通常のfloat16）を使用"
+    ;;
   "awq")
     QUANTIZATION_ARGS=""
     echo "🔧 AWQ量子化済みモデルを使用"
@@ -64,21 +78,21 @@ case $QUANTIZATION in
   "sq")
     QUANTIZATION_ARGS="--quantization sq"
     echo "🔧 SqueezeLLM量子化を使用"
-    echo "⚠️ sq は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
+    echo "⚠️ sq は一部環境で未サポートの可能性があります。動作しない場合は none / awq / gptq / bitsandbytes を推奨します。"
     ;;
   "fp4")
     QUANTIZATION_ARGS="--quantization fp4"
     echo "🔧 FP4量子化を使用"
-    echo "⚠️ fp4 は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
+    echo "⚠️ fp4 は一部環境で未サポートの可能性があります。動作しない場合は none / awq / gptq / bitsandbytes を推奨します。"
     ;;
   "nf4")
     QUANTIZATION_ARGS="--quantization nf4"
     echo "🔧 NF4量子化を使用"
-    echo "⚠️ nf4 は一部環境で未サポートの可能性があります。動作しない場合は awq / gptq / bitsandbytes を推奨します。"
+    echo "⚠️ nf4 は一部環境で未サポートの可能性があります。動作しない場合は none / awq / gptq / bitsandbytes を推奨します。"
     ;;
   *)
     echo "❌ 無効な量子化方法: $QUANTIZATION"
-    echo "有効なオプション: awq, gptq, bitsandbytes, sq, fp4, nf4"
+    echo "有効なオプション: none, awq, gptq, bitsandbytes, sq, fp4, nf4"
     exit 1
     ;;
 esac
@@ -109,9 +123,9 @@ if [[ "$MODEL_NAME" == *"VL"* ]]; then
 fi
 
 # ================================
-# モデルAPIサーバーを起動（量子化付き）
+# モデルAPIサーバーを起動
 # ================================
-echo "🚀 量子化vLLMサーバーを起動中..."
+echo "🚀 vLLMサーバーを起動中..."
 echo "モデル: $MODEL_NAME"
 echo "量子化: $QUANTIZATION"
 echo "URL: http://$HOST:$PORT"
@@ -155,7 +169,7 @@ uv run python -m vllm.entrypoints.openai.api_server \
 # ================================
 # サーバが立ち上がるまで少し待機
 # ================================
-echo "📡 量子化vLLM APIサーバを起動中..."
+echo "📡 vLLM APIサーバを起動中..."
 sleep 15
 
 # ================================
@@ -163,12 +177,12 @@ sleep 15
 # ================================
 echo "🔍 サーバーの健全性をチェック中..."
 
-max_attempts=48  # 最大4分待機（量子化は時間がかかる）
+max_attempts=48  # 最大4分待機（量子化は時間がかかる場合があるため）
 attempt=0
 
 while [ $attempt -lt $max_attempts ]; do
   if curl -s http://$HOST:$PORT/v1/models > /dev/null; then
-    echo "✅ 量子化vLLMサーバーが正常に起動しました！"
+    echo "✅ vLLMサーバーが正常に起動しました！"
     echo "📡 OpenAI互換エンドポイント: http://$HOST:$PORT/v1"
     echo "🔧 量子化方法: $QUANTIZATION"
     
@@ -182,7 +196,7 @@ while [ $attempt -lt $max_attempts ]; do
       -d '{
         "model": "'"$MODEL_NAME"'",
         "messages": [
-          {"role": "user", "content": "量子化テスト：こんにちは"}
+          {"role": "user", "content": "テスト：こんにちは"}
         ],
         "max_tokens": 64,
         "temperature": 0.7
@@ -261,7 +275,9 @@ done
 
 if [ $attempt -eq $max_attempts ]; then
   echo "❌ サーバー起動タイムアウト"
-  echo "💡 ヒント: 量子化には時間がかかります。より軽量なモデルを試してください。"
+  echo "💡 ヒント: より軽量なモデルを試すか、量子化オプションを確認してください。"
+  echo "   - 軽量モデル例: Qwen/Qwen2.5-0.5B-Instruct, Qwen/Qwen2.5-1.5B-Instruct"
+  echo "   - メモリ不足の場合: --gpu-memory-utilization を下げてください"
   pkill -f "vllm.entrypoints.openai.api_server"
   exit 1
 fi
